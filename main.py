@@ -34,26 +34,6 @@ class HessianFree:
 			self.contexts[i] = cl.Context(devices=[device])
 			self.gn[i] = GaussNewton(self.contexts[i],network,batch_size,"opencl/", use_double=use_double)
 			#self.gn[i].adjust_for_batch_size(batch_size)
-
-
-	# def contrastive_divergence_pretrain(self, epochs=5,iterations_per_epoch=2):
-	# 	# This works but easily starved by data trasnfer
-	# 	network_array = network.to_array(order='F')
-
-	# 	batches = self.data.sample_split( self.batch_size * len(self.devices)*epochs, len(self.devices)*epochs )
-
-	# 	print "Loaded arrays"
-	# 	for rbm in xrange(len(self.network.sizes)-1):
-	# 		for epoch in xrange(epochs):
-	# 			#result = []
-	# 			for i, gn in enumerate(self.gn):
-	# 				gn.update_weights(gpu_net_array=network_array)
-	# 				gn.zero_results()
-	# 				gn.contrastive_divergence(batches[i+epoch*len(self.devices)],rbm,iterations_per_epoch)
-				
-	# 			result = [ gn.read_weights( network.array_like() ) for gn in self.gn ]
-	# 			print "CD epoch:", epoch, " RBM:", rbm, " of ",len(self.network.sizes)-2
-	# 			network_array = numpy.mean(result,axis=0)
  
 	def minimize(self): #(x0,b,network, multipler, damping):
 		if self.x0 is None:
@@ -297,9 +277,6 @@ if False: #Test 2 (xor training example)
 	xor_batch = Batch( [numpy.array(x).astype(numpy.float32) for x in xor_data],2,1)
 	learner = HessianFree(network, xor_batch, 512, 1024, 1024, use_double=False)
 
-	# print "Pretraining"
-	# learner.contrastive_divergence_pretrain()
-	# print "Finished pretraining"
 	def eval(xyx):
 		return (numpy.log(1.-xyx[0]) + numpy.log(xyx[1]) + numpy.log(xyx[2]) + numpy.log(1.-xyx[3]))*0.25
 
@@ -316,85 +293,3 @@ if False: #Test 2 (xor training example)
 	for i,w in enumerate(network.w):
 		network.w[i] = network.w[i] * 0.5
 	print numpy.array([ network.predictions(x[:2]) for x in xor_data[:4] ]).flatten(), eval(numpy.array([ network.predictions(x[:2]) for x in xor_data[:4] ]).flatten())
-
-import data.strip_data as tester
-
-verbose = False
-
-output_len = 20
-input_len = 730
-network = DeepBeliefNetwork( (input_len,512,128,128,32,output_len) )
-
-print("Loading data")
-examples = tester.ExampleClass("data/EURUSD").load_examples()
-batch = Batch(examples.astype(numpy.float32),input_len,output_len)
-print("Loaded")
-
-#batch = batch.sub_batch(2000000,None)
-
-print batch.size
-
-
-def tester_fun2(set, net, xi, text_out = True):
-	right = [ [0,0] for _ in range(output_len)]
-	wrong = [ [0,0] for _ in range(output_len)]
-
-	for e in set.buffers:
-		outputs = net.predictions(e[:set.input_size])
-		reals = e[set.input_size:]
-		for i,o in enumerate(outputs):		
-			if (o>=0.5) == reals[i]:
-				right[i][reals[i]>=0.5]+=1
-			else:
-				wrong[i][reals[i]>=0.5]+=1
-	acc = 0
-	count = 0
-
-	f = open("{0}.results.txt".format(xi),'w')
-
-	for i in range(output_len):
-		if text_out: f.write("\ni=={0} - ".format(i))
-		if (right[i][1]+wrong[i][0])== 0:
-			#if text_out: f.write(str(right[i], wrong[i]))
-			pass
-		else:
-			acc *= count
-			acc += float(right[i][1])/(right[i][1]+wrong[i][0])
-			count = count + 1
-			acc /= count
-			#if text_out: f.write(str(right[i], wrong[i], float(right[i][1])/(right[i][1]+wrong[i][0])))
-			if text_out: f.write(str(float(right[i][1])/(right[i][1]+wrong[i][0])))
-	
-	print "P:", acc
-
-start_i=0
-load = False
-# if not load:
-	#learner.contrastive_divergence_pretrain()
-# 	pass
-# else:
-# 	network.load("74.net")
-
-iterations=2000
-verbose = False
-learner = HessianFree(network, batch, 10, 120, 400, use_double=False, damping=0.05)
-
-tester_fun2(batch.sample(4000),network, 0,text_out = True)
-
-
-for x in range(start_i, iterations):
-	x=x+1
-	start_time = time.time()
-
-	print "Iteration %03i" % x, 
-
-	error, steps = learner.hessian_free_optimize_step()
-	print error, steps, learner.damping
-
-	print " Error: %.6f, Damping: %+02.2f" % (error, numpy.log(learner.damping))
-	duration = time.time() - start_time
-	print "\tIteration number {0} took {1}, Estimated next save: {2}".format(x,duration, time.strftime( "%d %b %Y %H:%M:%S +0000", time.gmtime(time.time()+duration) ))
-
-	network.save("{0}.net".format(x))
-	# print("Saved to {0}".format(x))
-	# tester_fun2(batch.sample(5),network,x, text_out = True)
