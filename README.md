@@ -10,6 +10,4 @@ net from an initialization state.
 
 # Status of project
 
-The OpenCL kernel for the backward pass is currently non-optimal in the way it performs
-batching. Also, contrastive divergence pre-learning is currently not operational
-(but not required!)
+The OpenCL kernel for the backward pass is currently a large bottle-neck and should be reodone. Also, contrastive divergence, dropout and double support are disabled. The code also needs a large clean up.

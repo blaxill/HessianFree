@@ -1,82 +1,65 @@
+//#define RANLUXCL_LUX 1
+//#include <pyopencl-ranluxcl.cl>
+#define kernel kernel
 
-#define RANLUXCL_LUX 1
-#include <pyopencl-ranluxcl.cl>
+typedef void ranluxcl_state_t;
 
-#pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics   : enable
-% if use_double:
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
-% endif
+// % if use_double:
+// #pragma OPENCL EXTENSION cl_khr_fp64 : enable
+// % endif
 
 
 //typedef ${float_type} float_t;
 typedef float float_t;
 
-inline float_t sigmoid(float_t x)
-{
-% if use_double:
-	return (float_t)(1.0 / ( 1.0 + exp(-(double)(x) )));
-% endif:
-% if not use_double:
-	return 1.0 / ( 1.0 + exp(-x) );
-% endif:
-}
+// Nonlinearity functions
 
-inline float_t gradient_y(float_t y)
-{
-	return y * (1.0 - y);
-}
+inline float_t sigmoid(float_t x) { return 1.0 / ( 1.0 + exp(-x) ); }
+inline float_t gradient_y(float_t y) { return y * (1.0 - y); }
+inline float_t H_product(float_t x, float_t p) { return x * p * (1.0-p); }
+inline float_t gradient(float_t input, float_t target) { return (input - target); }
 
-inline float_t H_product(float_t x, float_t p)
-{
-	return x * p * (1.0-p);
-}
+// Layer helper functions
 
-inline float_t gradient(float_t input, float_t target)
-{
-	return (input - target);
-}
-
-inline size_t layer_size(size_t i)
-{
+inline size_t layer_size(size_t i) {
 % for i, size in enumerate(layer_sizes):
 	if( ${i} == i) return ${size};
 % endfor
 	return 0;
 }
 
-inline size_t weight_size(size_t i)
-{
+inline size_t weight_size(size_t i) {
 % for i, size in enumerate(weight_sizes):
 	if( ${i} == i) return ${size};
 % endfor
 	return 0;
 }
 
-inline size_t layer_offset(size_t i)
-{
+inline size_t layer_offset(size_t i) {
 % for i, size in enumerate(layer_offsets):
 	if( ${i} == i) return ${size};
 % endfor
 	return 0;
 }
 
-inline size_t weight_offset(size_t i)
-{
+inline size_t weight_offset(size_t i) {
 % for i, size in enumerate(weight_offsets):
 	if( ${i} == i) return ${size};
 % endfor
 	return 0;
 }
 
-__kernel void init_random(private uint ins,
-		global ranluxcl_state_t *ranluxcltab)
-{
-	ranluxcl_initialization(ins, ranluxcltab);
+// Kernels
+
+kernel
+void init_random(private uint ins, global ranluxcl_state_t *ranluxcltab) {
+	// ranluxcl_initialization(ins, ranluxcltab);
 }
 
 
 __attribute__((reqd_work_group_size( ${work_group_size} , 1, 1)))
-__kernel void forward_pass(	
+kernel
+void forward_pass(	
 	__global float_t *state_arrays,
 
 	__global const float_t *weight_matrix,
@@ -94,11 +77,11 @@ __kernel void forward_pass(
 
 	const uint vector_count = ${ vector_count };
 
-% if dropout:
-	ranluxcl_state_t ranluxclstate;
-	if(lidx == 0)
-		ranluxclstate = ranluxcltab[get_group_id(0)];
-% endif:
+// % if dropout:
+//	ranluxcl_state_t ranluxclstate;
+//	if(lidx == 0)
+//		ranluxclstate = ranluxcltab[get_group_id(0)];
+// % endif:
 
 	uint vector_id = 0;
 	const size_t visible_size = layer_size(layer);
@@ -108,24 +91,31 @@ __kernel void forward_pass(
 	const size_t weights_offsets = weight_offset(layer);
 
 	size_t hidden_id = get_group_id(0);
-	for (uint id = hidden_id; id < hidden_size * vector_count; id += get_num_groups(0))
+	for (uint id = hidden_id;
+			  id < hidden_size * vector_count;
+			  id += get_num_groups(0))
 	{
-		hidden_id=id%hidden_size;
-		vector_id=id/hidden_size;
-		float_t val=0.0;
+		hidden_id = id%hidden_size;
+		vector_id = id/hidden_size;
+		float_t val = 0.0;
 
 		uint x = lidx;
 		for (; x < visible_size; x += get_local_size(0))
 		{
-			val += state_arrays[visible_offset + x + visible_size*vector_id] * weight_matrix[weights_offsets + x + (visible_size+1)*hidden_id];
+			val += state_arrays[visible_offset + x + visible_size*vector_id] *
+				weight_matrix[weights_offsets + x + (visible_size+1)*hidden_id];
 		}
 
 		if(x == visible_size)
-			val += weight_matrix[weights_offsets + visible_size + (visible_size+1)*hidden_id];
+			val += weight_matrix[weights_offsets
+								  + visible_size 
+								  + (visible_size+1)*hidden_id];
 
-		local_store[lidx]=val;
+		local_store[lidx] = val;
 
-		for (uint stride = get_local_size(0)/2; stride > 0; stride /= 2)
+		for (uint stride = get_local_size(0)/2;
+				  stride > 0;
+				  stride /= 2)
 		{
 			barrier(CLK_LOCAL_MEM_FENCE);
 			if (lidx < stride)
@@ -134,23 +124,24 @@ __kernel void forward_pass(
 
 		if (lidx == 0)
 		{		
-% if dropout:
-			if(enable_dropout==1 && ranluxcl32(&ranluxclstate).x>0.5f)
-				state_arrays[hidden_offset + hidden_id + vector_id*hidden_size] = 0.f;
-			else
-% endif:	
-				state_arrays[hidden_offset + hidden_id + vector_id*hidden_size] = sigmoid(local_store[lidx]);
+// % if dropout:
+//			if(enable_dropout==1 && ranluxcl32(&ranluxclstate).x>0.5f)
+//				state_arrays[hidden_offset + hidden_id + vector_id*hidden_size] = 0.f;
+//			else
+// % endif:	
+			state_arrays[hidden_offset + hidden_id + vector_id*hidden_size] = 
+				sigmoid(local_store[lidx]);
 		}
 	}
-% if dropout:
-	if(lidx == 0)
-		ranluxcltab[get_group_id(0)] = ranluxclstate;
-% endif:
+//% if dropout:
+//	if(lidx == 0)
+//		ranluxcltab[get_group_id(0)] = ranluxclstate;
+//% endif:
 }
 
 
 __attribute__((reqd_work_group_size( ${work_group_size} , 1, 1)))
-__kernel void R_forward_pass(	
+kernel void R_forward_pass(	
 	__global float_t *state_arrays,
 	__global float_t *R_state_arrays,
 
@@ -222,6 +213,8 @@ __kernel void R_forward_pass(
 
 }
 
+/*
+
 uint sample_layer(	//returns new offset
 	__global float_t *state_arrays,
 
@@ -242,7 +235,7 @@ uint sample_layer(	//returns new offset
 
 	for (uint id = gidx; id < size * vector_count; id += get_global_size(0))
 	{
-		state_arrays[offset + id] = (state_arrays[offset + id]>random_vector[random_offset])?1.0:0.0;
+		state_arrays[offset + id] = (state_arrays[offset + id]>random_vector[random_offset])? 1.0 : 0.0;
 		random_offset=(random_offset+get_global_size(0))&(random_size-1);
 	}
 	return random_offset;
@@ -355,7 +348,7 @@ void rbm_step_forward(
 }
 
 __attribute__((reqd_work_group_size( ${work_group_size} , 1, 1)))
-__kernel void XXX_contrastive_divergence(	
+kernel void XXX_contrastive_divergence(	
 	__global float_t *state_arrays,
 	__global float_t *dreaming,
 
@@ -438,10 +431,10 @@ __kernel void XXX_contrastive_divergence(
 		}
 	}
 }
-
+*/
 
 __attribute__((reqd_work_group_size( ${work_group_size} , 1, 1)))
-__kernel void copy_buffers(
+kernel void copy_buffers(
 	__global const float_t *buf_arrays,
 	__global float_t *state_arrays,
 	__global float_t *targets
@@ -464,7 +457,7 @@ __kernel void copy_buffers(
 }
 
 __attribute__((reqd_work_group_size( ${work_group_size} , 1, 1)))
-__kernel void load_error(
+kernel void load_error(
 	__global const float_t *state_arrays,
 	__global const float_t *targets,
 	__global float_t *error
@@ -481,7 +474,7 @@ __kernel void load_error(
 
 
 __attribute__((reqd_work_group_size( ${work_group_size} , 1, 1)))
-__kernel void backward_pass(	
+kernel void backward_pass(	
 	__global const float_t *state_arrays,
 	__global const float_t *initial_error,
 
@@ -591,7 +584,8 @@ __kernel void backward_pass(
 			}
 		}
 }
-__kernel void zero(	
+
+kernel void zero(	
 	__global float_t *input
 	)
 {
@@ -601,18 +595,8 @@ __kernel void zero(
 	input[gidx]=0.;
 }
 
-/*
-__kernel void forward_pass(	
-	__global float_t *state_arrays,
-
-	__global const float_t *weight_matrix,
-
-	const uint layer_target,
-	const uint layer_start
-	)
-{*/
 __attribute__((reqd_work_group_size( ${work_group_size} , 1, 1)))
-__kernel void calc_loss(
+kernel void calc_loss(
 	__global float_t *state_arrays,
 
 	__global const float_t *weight_matrix,
@@ -668,7 +652,7 @@ __kernel void calc_loss(
 
 
 __attribute__((reqd_work_group_size( ${work_group_size} , 1, 1)))
-__kernel void sum(
+kernel void sum(
 	__global float_t *vector,
 	const uint inv_multiplier,
 

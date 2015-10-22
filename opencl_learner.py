@@ -49,7 +49,7 @@ class GaussNewton:
 
 		self.current_batch = None
 
-		self.work_group_size = 16
+		self.work_group_size = 1
 
 		
 		self.random_state = cl.Buffer(self.ctx, self.memory_flags, self.network.layer_max*112 )
@@ -94,7 +94,7 @@ class GaussNewton:
 			dropout = self.dropout,
 			))
 
-		self.program = cl.Program(self.ctx, program_src).build("-Werror")
+		self.program = cl.Program(self.ctx, program_src).build()#("-Werror")
 
 		self.program.init_random(self.queue,(self.network.layer_max,),(1,),
 			numpy.uint32(123),
