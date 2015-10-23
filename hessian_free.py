@@ -8,8 +8,10 @@ from opencl_learner import *
 import sets
 import math
 import sys
+import os
 
 verbose = False
+print_info = os.environ.get('PRINT_INFO',None)
 
 class HessianFree:
 	def __init__(self, network, data,
@@ -22,6 +24,7 @@ class HessianFree:
                 print "devices: ", self.devices
             self.contexts = [None] * len(self.devices)
             self.gn = [None] * len(self.devices)
+
 
             self.gradient_compute_batches = gradient_compute_batches
             self.loss_compute_batches = loss_compute_batches
@@ -40,6 +43,9 @@ class HessianFree:
                     self.gn[i] = GaussNewton(self.contexts[i],network,batch_size,"opencl/", use_double=use_double)
                     #self.gn[i].adjust_for_batch_size(batch_size)
  
+            if print_info is not None:
+                print platform, self.devices, self.contexts
+
 	def minimize(self): #(x0,b,network, multipler, damping):
 		if self.x0 is None:
 			self.x0 = numpy.zeros_like(self.b)
